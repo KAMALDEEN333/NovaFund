@@ -51,6 +51,9 @@ class EnvironmentVariables {
   STELLAR_RPC_URL: string;
 
   @IsString()
+  STELLAR_HORIZON_URL: string;
+
+  @IsString()
   STELLAR_NETWORK_PASSPHRASE: string;
 
   @IsString()

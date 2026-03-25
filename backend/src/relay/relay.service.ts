@@ -6,7 +6,6 @@ import {
   Networks,
   Horizon,
   Transaction,
-  FeeBumpTransaction,
 } from '@stellar/stellar-sdk';
 
 @Injectable()
@@ -24,10 +23,7 @@ export class RelayService {
       this.sponsorKeypair = Keypair.fromSecret(stellarConfig.sponsorSecretKey);
     }
     
-    // We use Horizon for submitting fee bump transactions
-    // If it's a Soroban transaction, it can still be wrapped in a Fee Bump and submitted via Horizon or RPC
-    // Horizon is generally safer for Fee Bump submission as it's a standard Stellar feature
-    this.server = new Horizon.Server(process.env.STELLAR_HORIZON_URL || 'https://horizon-testnet.stellar.org');
+    this.server = new Horizon.Server(stellarConfig.horizonUrl);
     this.networkPassphrase = stellarConfig.networkPassphrase || Networks.TESTNET;
   }
 
@@ -45,15 +41,19 @@ export class RelayService {
       }
 
       // 2. Build the Fee Bump transaction
-      // The fee must be at least (inner_ops + 1) * base_fee
-      // We'll use a safe margin or let the SDK calculate it if possible
-      // Actually, we should probably fetch the latest base fee
-      const feeStats = await this.server.fetchBaseFee();
-      const baseFee = parseInt(feeStats.toString(), 10) || 100;
+      // A Fee Bump transaction fee must be at least the inner transaction's fee + base fee.
+      // We fetch the current base fee for accuracy.
+      const baseFee = await this.server.fetchBaseFee();
+      
+      // Calculate the total fee for the outer Fee Bump transaction
+      // Rule: outer_fee >= inner_fee + (inner_ops + 1) * base_fee
+      // For Soroban, inner_fee is already high, so we must add a buffer.
+      const innerFee = parseInt(innerTx.fee, 10);
+      const outerFee = innerFee + (baseFee * (innerTx.operations.length + 1));
       
       const feeBumpTx = TransactionBuilder.buildFeeBumpTransaction(
         this.sponsorKeypair,
-        (baseFee * (innerTx.operations.length + 1)).toString(),
+        outerFee.toString(),
         innerTx,
         this.networkPassphrase,
       );
@@ -62,7 +62,7 @@ export class RelayService {
       feeBumpTx.sign(this.sponsorKeypair);
 
       // 4. Submit to the network
-      this.logger.log(`Submitting fee-bumped transaction for ${innerTx.source}`);
+      this.logger.log(`Submitting fee-bumped transaction ${innerTx.hash().toString('hex')} for source ${innerTx.source}`);
       const response = await this.server.submitTransaction(feeBumpTx);
 
       return {
