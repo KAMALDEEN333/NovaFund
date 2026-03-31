@@ -20,6 +20,9 @@ Cargo.lock
 .env
 .env.local
 .env.*.local
+/BACKEND_WAVE_ISSUES.md
+/WAVE_ISSUES.md
+
 
 # Node / Frontend
 node_modules/
